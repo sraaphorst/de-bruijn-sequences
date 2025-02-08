@@ -1,0 +1,66 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.spec
+
+# Virtual environments
+venv/
+ENV/
+env/
+venv.bak/
+venv-old/
+
+# PyCharm files
+.idea/
+*.iml
+*.iws
+# Optionally, you might want to ignore additional PyCharm-specific files:
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/dictionaries
+.idea/vcs.xml
+
+# macOS generated files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon files that might be present
+Icon?
+._*
+
+# Thumbnails and other macOS-specific files
+._.com.apple.timemachine.donotpresent
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
