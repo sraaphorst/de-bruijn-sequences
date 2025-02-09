@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # By Sebastian Raaphorst, 2025.
 
+from copy import deepcopy
 from itertools import product
 from sys import argv
 from typing import Optional, TypeAlias, TypeVar
 
 # Support graphs of arbitrary type.
 T = TypeVar('T')
-adjacency_list: TypeAlias = dict[T, frozenset[T]]
+adjacency_list: TypeAlias = dict[T, set[T]]
 
 
-def build_de_bruijn_graph(k: int, n: int) -> adjacency_list[tuple[int, ...]]:
+def _build_de_bruijn_digraph(k: int, n: int) -> adjacency_list[tuple[int, ...]]:
     """
     Constructs a De Bruijn digraph for a given alphabet size `k` and length `n`.
     Note that this means that the vertices correspond to tuples over `range(k)` pf size `n-1`.
@@ -23,104 +24,94 @@ def build_de_bruijn_graph(k: int, n: int) -> adjacency_list[tuple[int, ...]]:
     """
     alphabet = frozenset(range(k))
     vertices = frozenset(product(alphabet, repeat=n-1))
-    adjacencies = {v: [] for v in vertices}
-
-    for v in vertices:
-        # If v = (t_0, t_1, ..., t_{n-2}),, make out edges with all vertices of the form
-        # w = (t_1, ..., t_{n-2}, s).
-        for s in alphabet:
-            w = v[1:] + (s,)
-            adjacencies[v].append(w)
-
-    return {v: frozenset(adjacencies[v]) for v in vertices}
+    return {v: {v[1:] + (s,) for s in alphabet} for v in vertices}
 
 
-def _degree_condition(graph: adjacency_list[T]) -> bool:
+def _reverse_digraph(orig_digraph: adjacency_list[T]) -> adjacency_list[T]:
+    """
+    Given a digraph, reverse all the edges and return a mutable digraph.
+    :param orig_digraph: the adjacency list of the original digraph
+    :return: the reversed digraph
+    """
+    reversed_digraph: adjacency_list[T] = {}
+
+    for v, nbrs in orig_digraph.items():
+        if v not in reversed_digraph:
+            reversed_digraph[v] = set()
+        for w in nbrs:
+            if w not in reversed_digraph:
+                reversed_digraph[w] = set()
+            reversed_digraph[w].add(v)
+
+    return reversed_digraph
+
+
+def _degree_condition(digraph: adjacency_list[T]) -> bool:
     """
     Check that the in-degree count of every vertex is equal to the out-degree count.
-    :param graph: the adjacency list of the graph or digraph
-    :type graph: the type of the graph's vertices
+    :param digraph: the adjacency list of the graph or digraph
+    :type digraph: the type of the graph's vertices
     :return: true if the condition is satisfied, false otherwise
     :rtype: bool
     """
-    in_degree = {v: 0 for v in graph}
-    out_degree = {v: 0 for v in graph}
+    in_degree = {v: 0 for v in digraph}
+    out_degree = {v: 0 for v in digraph}
 
-    for v, successors in graph.items():
+    for v, successors in digraph.items():
         out_degree[v] = len(successors)
         for vp in successors:
             in_degree[vp] += 1
 
-    return all(in_degree[v] == out_degree[v] for v in graph)
+    return all(in_degree[v] == out_degree[v] for v in digraph)
 
 
-def _strongly_connected(graph: adjacency_list[T]) -> bool:
+def _dfs_iter(start: T, digraph: adjacency_list[T]) -> set[T]:
     """
-    Determines if a directed graph is strongly connected.
-
-    We do so by using Kosaraju's algorithm to find strongly connected components
-    and make sure that there is only one such component.
-
-    Link to the pseudocode:
-    https://en.wikipedia.org/wiki/Kosaraju%27s_algorithm
-
-    :param graph: The directed graph represented as an adjacency list where
-        each vertex maps to a list of adjacent vertices.
-    :type graph: the type of the graph's vertices
-    :return: A boolean indicating whether the graph is strongly connected.
-    :rtype: bool
+    Perform an iterative DFS (i.e using a stack) from start to determine
+    the set of vertices that can be reached from in the digraph.
+    :param start: A starting vertex in the digraph.
+    :param digraph: The adjacency list of the digraph.
+    :return: The set of vertices that can be reached from start in the digraph.
     """
-    # Step 1 of Kosaraju's algorithm.
-    visited = {v: False for v in graph}
-    block = []
+    stack = [start]
+    visited = set(start)
 
-    # Step 2 of Kosaraju's algorithm.
-    def visit(u: T) -> None:
-        if not visited[u]:
-            visited[u] = True
-            for v in graph[u]:
-                visit(v)
-            block.insert(0, u)
-
-    for u in graph:
-        visit(u)
-
-    # Step 3 of Kosaraju's algorithm.
-    components: dict[T, T] = {}
-    def assign(u: T, root: T):
-        if u not in components:
-            components[u] = root
-            for v in graph:
-                if u in graph.get(v, frozenset()):
-                    assign(v, root)
-
-    for u in block:
-        assign(u, u)
-
-    # Make sure there is only one strongly connected component.
-    return len(set(components.values())) == 1
-
-
-def _hierholzer(graph: adjacency_list[T]) -> list[T]:
-    # Make a copy of graph, but we need it to be mutable.
-    graph_mut = {v: set(nbrs) for v, nbrs in graph.items()}
-
-    # We want to start with the vertex that is all 0s.
-    stack = [(0,) * len(next(iter(graph)))]
-    # stack = [next(iter(graph_mut))]
-    cycle = []
     while stack:
-        v = stack[-1]
-        if graph_mut[v]:
-            w = graph_mut[v].pop()
-            stack.append(w)
-        else:
-            cycle.append(stack.pop())
-    cycle.reverse()
-    return cycle
+        current = stack.pop()
+        for nxt in digraph[current]:
+            if nxt not in visited:
+                visited.add(nxt)
+                stack.append(nxt)
+    return visited
 
 
-def eulerian_cycle(graph: adjacency_list[T]) -> Optional[list[T]]:
+def _is_strongly_connected(digraph: adjacency_list[T]) -> bool:
+    """
+    Check if digraph is strongly connected using two stack-based DFS passes (original & reversed).
+    """
+    if not digraph:
+        return True
+
+    # Pick a start node.
+    start = next(iter(digraph))
+
+    # 1. Visit all nodes in original graph.
+    visited_original = _dfs_iter(start, digraph)
+    if len(visited_original) < len(digraph):
+        return False
+
+    # 2. Reverse the graph
+    graph_rev = _reverse_digraph(digraph)
+
+    # 3. Visit all nodes in the reversed graph.
+    visited_reversed = _dfs_iter(start, graph_rev)
+    if len(visited_reversed) < len(digraph):
+        return False
+
+    return True
+
+
+def _eulerian_cycle(graph: adjacency_list[T]) -> Optional[list[T]]:
     """
     Using Hierholzer's Algorithm, find an Eulerian cycle in the given graph (simple or directed)..
     :param graph: the adjacency list of the graph or digraph
@@ -131,19 +122,32 @@ def eulerian_cycle(graph: adjacency_list[T]) -> Optional[list[T]]:
     # First determine if an Eulerian circuit exists.
     if not _degree_condition(graph):
         return None
-    if not _strongly_connected(graph):
+    if not _is_strongly_connected(graph):
         return None
-    return _hierholzer(graph)
+
+    # Find the Eulerian circuit using Hierholzer's Algorithm.
+    # We need a version of the adjacency list we can mutate, so we start by copying.
+    graph_cpy = deepcopy(graph)
+    stack = [next(iter(graph_cpy))]
+    cycle = []
+    while stack:
+        v = stack[-1]
+        if graph_cpy[v]:
+            w = graph_cpy[v].pop()
+            stack.append(w)
+        else:
+            cycle.append(stack.pop())
+    cycle.reverse()
+    return cycle
 
 
-def main(k: int, n: int):
-    graph = build_de_bruijn_graph(k, n)
-    e_cycle = eulerian_cycle(graph)
-    de_bruijn_sequence = list(e_cycle[0]) + [e[-1] for e in e_cycle[1:]]
+def de_bruijn_sequence(k: int, n: int) -> Optional[list[int]]:
+    assert k >= 2, "k must be at least 2."
+    assert n >= 3, "n must be at least 3."
 
-    # If there is a zero at the end of the de Bruijn sequence, move it to the beginning.
-    if de_bruijn_sequence[-1] == 0:
-        de_bruijn_sequence = [0] + de_bruijn_sequence[:-1]
+    graph = _build_de_bruijn_digraph(k, n)
+    e_cycle = _eulerian_cycle(graph)
+    sequence = list(e_cycle[0]) + [e[-1] for e in e_cycle[1:]]
 
     # The sequence should be of size k^n + n - 1:
     # This is because there are k^n keywords, and every window of size n defines one.
@@ -152,25 +156,27 @@ def main(k: int, n: int):
     # part of the sequence cycle. The last n-1 characters should be the same as the first n-1.
     full_cycle_length = k**n + n - 1
     repeated_cycle_length = n - 1
-    assert len(de_bruijn_sequence) == full_cycle_length, f"Incorrect cycle length: Expected {full_cycle_length}, got {len(de_bruijn_sequence)}."
-    assert de_bruijn_sequence[:repeated_cycle_length] == de_bruijn_sequence[-repeated_cycle_length:], f"Does not cycle: {de_bruijn_sequence}."
+    assert len(sequence) == full_cycle_length, f"Incorrect cycle length: Expected {full_cycle_length}, got {len(sequence)}."
+    assert sequence[:repeated_cycle_length] == sequence[-repeated_cycle_length:], f"Does not cycle: {sequence}."
 
     # Check the cycle to make sure all elements are covered.
-    uncovered_elements = set(product(range(k), repeat=n)) - set(tuple(de_bruijn_sequence[i:i+n]) for i in range(k**n))
+    uncovered_elements = set(product(range(k), repeat=n)) - set(tuple(sequence[i:i+n]) for i in range(k**n))
     assert len(uncovered_elements) == 0, f"Uncovered elements: {uncovered_elements}."
 
     # Chop the unnecessary end off the cycle and output it.
-    de_bruijn_sequence = de_bruijn_sequence[:-repeated_cycle_length]
-    print(de_bruijn_sequence)
+    return sequence[:-repeated_cycle_length]
+
+
+def _main(k: int, n: int):
+    print(de_bruijn_sequence(k, n))
 
 
 if __name__ == '__main__':
     if len(argv) != 3:
-        print(f'Use: {argv[0]} k n, where')
-        print('\tk is the alphabet size')
-        print('\tn is the length of substrings')
+        print(f'Usage: {argv[0]} k n, where')
+        print('\tk is the alphabet size, where k ≥ 2')
+        print('\tn is the length of substrings, where n ≥ 3')
         exit(1)
-
     k = int(argv[1])
     n = int(argv[2])
-    main(k, n)
+    _main(k, n)

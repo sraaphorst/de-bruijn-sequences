@@ -11,7 +11,7 @@ Here is an example of a simple cycle where `n = 3` and `k = 2`:
 
 ```text
 $ ./de-bruijn.py 2 3
-[0, 0, 0, 1, 0, 1, 1, 1]
+[0, 1, 0, 1, 1, 1, 0, 0]
 ```
 
 We can see that the output cycles to cover all `2^3 = 8` words:
@@ -24,14 +24,6 @@ We can see that the output cycles to cover all `2^3 = 8` words:
   </thead>
   <tbody>
     <tr>
-      <td>000</td>
-      <td>011</td>
-    </tr>
-    <tr>
-      <td>001</td>
-      <td>111</td>
-    </tr>
-    <tr>
       <td>010</td>
       <td>110</td>
     </tr>
@@ -39,9 +31,16 @@ We can see that the output cycles to cover all `2^3 = 8` words:
       <td>101</td>
       <td>100</td>
     </tr>
+    <tr>
+      <td>011</td>
+      <td>000</td>
+    </tr>
+    <tr>
+      <td>111</td>
+      <td>001</td>
+    </tr>
   </tbody>
 </table>
-
 
 
 This works by:
@@ -53,4 +52,4 @@ This works by:
   * The out degree of each vertex is the same as its in degree.
   * The digraph forms a strongly connected component (there is always a path between any two vertices). This is done with [Kosaraju's algorithm](https://en.wikipedia.org/wiki/Kosaraju%27s_algorithm).
 * Then an Eulerian circuit is found using [Hierholzer's Algorithm](https://en.wikipedia.org/wiki/Eulerian_path).
-* The final cycle is normalized (any trailing zero is moved to the beginning) and checked for coverage.
+* The final cycle is checked for coverage and then output.
